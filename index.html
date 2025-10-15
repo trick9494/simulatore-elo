@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Simulatore Monte Carlo - Elo + Poisson (10.000) • Extended Markets</title>
+<style>
+  :root{--bg1:#071019;--accent:#ffd700;--muted:#a0a0a0}
+  *{box-sizing:border-box}
+  body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; margin:0; background:linear-gradient(135deg,#072a14,#071019); color:#fff; padding:20px}
+  .container{max-width:1200px;margin:0 auto}
+  header{text-align:center;margin-bottom:18px}
+  h1{margin:0;font-size:1.7rem;background:linear-gradient(90deg,var(--accent),#ffed4e);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  p.sub{color:var(--muted);margin-top:6px}
+  .card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,215,0,0.06);padding:18px;border-radius:12px;margin-bottom:16px}
+  .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  label{display:block;color:var(--accent);font-weight:700;margin-bottom:6px}
+  input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.03);color:#fff}
+  button{background:linear-gradient(90deg,var(--accent),#ffed4e);border:none;color:#062018;padding:12px 16px;border-radius:8px;font-weight:800;cursor:pointer}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:12px}
+  .stat{background:rgba(255,215,0,0.06);padding:12px;border-radius:8px;text-align:center}
+  .stat .label{color:var(--muted);font-size:0.9rem}
+  .stat .value{color:var(--accent);font-weight:800;font-size:1.2rem;margin-top:6px}
+  .prob-bars{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+  .prob-row{display:flex;align-items:center;gap:10px}
+  .prob-name{width:150px;font-weight:700;color:var(--muted)}
+  .bar{flex:1;height:28px;background:rgba(255,255,255,0.04);border-radius:16px;overflow:hidden}
+  .fill{height:100%;background:linear-gradient(90deg,var(--accent),#ffed4e);display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#062018;font-weight:800}
+  .scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:10px}
+  .score{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;text-align:center}
+  .muted{color:var(--muted)}
+  .small{font-size:0.85rem}
+  .progress{height:10px;background:rgba(255,255,255,0.04);border-radius:8px;overflow:hidden;margin-top:10px}
+  .progress > .fill{height:100%;background:linear-gradient(90deg,#4caf50,#2e7d32);width:0%}
+  .markets-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}
+  .market-card{background:rgba(255,255,255,0.02);padding:10px;border-radius:8px}
+  footer{margin-top:18px;color:var(--muted);font-size:0.9rem;text-align:center}
+  @media (max-width:800px){ .prob-name{width:110px} }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Simulatore Monte Carlo • Elo + Poisson (10.000) — Extended Markets</h1>
+      <p class="sub">Ora con: falli, corner, tiri totali, tiri in porta e fuorigioco (simulati 10.000 volte)</p>
+    </header>
+
+    <div class="card">
+      <form id="form">
+        <div class="form-grid">
+          <div>
+            <label for="sport">Sport</label>
+            <select id="sport">
+              <option value="soccer" selected>Calcio</option>
+              <option value="basket">Basket</option>
+              <option value="tennis">Tennis</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="home">Casa (squadra/giocatore)</label>
+            <input id="home" required placeholder="Es: Inter / Lakers / Djokovic" value="Home">
+          </div>
+
+          <div>
+            <label for="homeElo">Elo Casa</label>
+            <input id="homeElo" type="number" required min="800" max="3500" value="2000">
+          </div>
+
+          <div>
+            <label for="away">Trasferta (squadra/giocatore)</label>
+            <input id="away" required placeholder="Es: Milan / Celtics / Nadal" value="Away">
+          </div>
+
+          <div>
+            <label for="awayElo">Elo Trasferta</label>
+            <input id="awayElo" type="number" required min="800" max="3500" value="1850">
+          </div>
+
+          <div style="display:flex;align-items:flex-end">
+            <button id="run" type="submit">▶️ Esegui 10.000 simulazioni</button>
+          </div>
+        </div>
+      </form>
+
+      <div id="progressWrap" style="display:none">
+        <div class="muted small" style="margin-top:8px">Simulazioni in corso...</div>
+        <div class="progress"><div id="progressBar" class="fill"></div></div>
+      </div>
+    </div>
+
+    <div id="results" class="card" style="display:none">
+      <div class="grid">
+        <div class="stat">
+          <div class="label" id="expLabel">Atteso Casa</div>
+          <div class="value" id="expHome">—</div>
+        </div>
+        <div class="stat">
+          <div class="label" id="expLabel2">Atteso Trasferta</div>
+          <div class="value" id="expAway">—</div>
+        </div>
+        <div class="stat">
+          <div class="label">Prob. Casa</div>
+          <div class="value" id="probHome">—</div>
+        </div>
+        <div class="stat">
+          <div class="label">Prob. Trasferta</div>
+          <div class="value" id="probAway">—</div>
+        </div>
+      </div>
+
+      <div id="mainProbs">
+        <h3 class="muted small" style="margin-top:14px">Probabilità esiti & Over/Under</h3>
+        <div class="prob-bars" id="probBars">
+          <div class="prob-row">
+            <div class="prob-name" id="name1">Vittoria Casa</div>
+            <div class="bar"><div id="bar1" class="fill">0%</div></div>
+          </div>
+          <div class="prob-row" id="drawRow">
+            <div class="prob-name" id="nameX">Pareggio</div>
+            <div class="bar"><div id="barX" class="fill">0%</div></div>
+          </div>
+          <div class="prob-row">
+            <div class="prob-name" id="name2">Vittoria Trasferta</div>
+            <div class="bar"><div id="bar2" class="fill">0%</div></div>
+          </div>
+
+          <div id="ouSection" style="margin-top:8px">
+            <div class="prob-row">
+              <div class="prob-name">Over 2.5</div>
+              <div class="bar"><div id="barOver" class="fill">0%</div></div>
+            </div>
+            <div class="prob-row">
+              <div class="prob-name">Under 2.5</div>
+              <div class="bar"><div id="barUnder" class="fill">0%</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Extended markets for soccer -->
+      <div id="markets" style="margin-top:14px; display:block">
+        <h3 class="muted small">📈 Mercati addizionali (solo Calcio)</h3>
+        <div class="markets-grid" id="marketsGrid">
+          <!-- Each market card will be filled dynamically -->
+        </div>
+      </div>
+
+      <div style="margin-top:14px">
+        <h3 class="muted small">Top risultati osservati (dalle simulazioni)</h3>
+        <div id="topScores" class="scores"></div>
+      </div>
+
+      <div style="margin-top:12px" id="extraInfo" class="muted small"></div>
+    </div>
+
+    <footer>
+      Nota: il calcolo esegue 10.000 simulazioni Monte Carlo nella tua CPU. Può richiedere alcuni secondi.
+    </footer>
+  </div>
+
+<script>
+/* ---------- Helpers ---------- */
+function randUniform(){ return Math.random(); }
+function randNormal(mean=0,sd=1){
+  // Box-Muller
+  let u=0,v=0;
+  while(u===0) u = Math.random();
+  while(v===0) v = Math.random();
+  let z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0*Math.PI*v);
+  return z*sd + mean;
+}
+function poissonSample(lambda){
+  // Knuth algorithm, with safety cap
+  if(lambda <= 0) return 0;
+  if(lambda > 60) { // for very large lambda, approximate normal
+    const mean = lambda, sd = Math.sqrt(lambda);
+    return Math.max(0, Math.round(randNormal(mean, sd)));
+  }
+  const L = Math.exp(-lambda);
+  let k = 0;
+  let p = 1;
+  while (p > L){
+    k++;
+    p *= Math.random();
+    if(k>200) break;
+  }
+  return k-1;
+}
+function binomialSample(n, p) {
+  // for moderate n, use simple loop; if n large approximate with normal
+  if(n<=0) return 0;
+  if(n > 1000) {
+    const mean = n*p, sd = Math.sqrt(n*p*(1-p));
+    return Math.max(0, Math.round(randNormal(mean, sd)));
+  }
+  let c = 0;
+  for(let i=0;i<n;i++) if(Math.random() < p) c++;
+  return c;
+}
+function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+function formatPct(x){ return (x*100).toFixed(1) + '%'; }
+function formatNum(x,dec=2){ return Number(x).toFixed(dec); }
+
+/* Elo win prob */
+function eloWinProb(eloA, eloB) {
+  return 1 / (1 + Math.pow(10, (eloB - eloA) / 400));
+}
+
+/* ---------- Simulation Models ---------- */
+
+const N_SIM = 10000; // Opzione B
+
+async function simulateSoccerExtended(homeElo, awayElo){
+  // automatic home advantage
+  const adv = 80;
+  const adjHome = homeElo + adv;
+  const eloDiff = adjHome - awayElo;
+
+  // Goals:
+  const baseGoal = 1.3; // per squadra se Elo equal
+  const lambdaHome = baseGoal * Math.exp(eloDiff / 1200);
+  const lambdaAway = baseGoal * Math.exp(-eloDiff / 1200);
+
+  // Extended markets base expectations when Elo equal (per squadra)
+  const baseShots = 12.0;       // tiri totali
+  const baseShotsOnTarget = 4.0; // tiri in porta
+  const baseCorners = 4.5;       // corner
+  const baseFouls = 10.0;       // falli commessi
+  const baseOffsides = 1.2;     // fuorigioco
+
+  // Adjust with Elo: stronger teams produce più tiri/shotson/angoli; weaker teams commit più falli
+  // We'll use mild exponential scaling
+  const shotsHomeExp = baseShots * Math.exp(eloDiff / 1600);
+  const shotsAwayExp = baseShots * Math.exp(-eloDiff / 1600);
+  const sotHomeExp = baseShotsOnTarget * Math.exp(eloDiff / 2200);
+  const sotAwayExp = baseShotsOnTarget * Math.exp(-eloDiff / 2200);
+  const cornersHomeExp = baseCorners * Math.exp(eloDiff / 1800);
+  const cornersAwayExp = baseCorners * Math.exp(-eloDiff / 1800);
+  // fouls: weaker team tends to have slightly more fouls (defensive)
+  const foulsHomeExp = baseFouls * Math.exp(-eloDiff / 2000); // if home much stronger -> fewer fouls
+  const foulsAwayExp = baseFouls * Math.exp(eloDiff / 2000);
+  // offsides correlates with attacking intent -> proportional to shots
+  const offsHomeExp = Math.max(0.2, shotsHomeExp * 0.12); // scale factor
+  const offsAwayExp = Math.max(0.2, shotsAwayExp * 0.12);
+
+  // Thresholds (markets) we will compute Over probabilities for:
+  const thresholds = {
+    fouls: 10,        // per squadra
+    corners: 7,       // per squadra
+    shots: 10,        // per squadra
+    shotsOnTarget: 4, // per squadra
+    offsides: 1       // per squadra
+  };
+
+  // trackers
+  let homeWins = 0, draws = 0, awayWins = 0;
+  let overCount = 0, underCount = 0;
+  let sumHomeGoals = 0, sumAwayGoals = 0;
+
+  // extended trackers per team
+  let sumShotsHome = 0, sumShotsAway = 0;
+  let sumSotHome = 0, sumSotAway = 0;
+  let sumCornersHome = 0, sumCornersAway = 0;
+  let sumFoulsHome = 0, sumFoulsAway = 0;
+  let sumOffsHome = 0, sumOffsAway = 0;
+
+  // over counters for thresholds
+  let overShotsHome = 0, overShotsAway = 0;
+  let overSotHome = 0, overSotAway = 0;
+  let overCornersHome = 0, overCornersAway = 0;
+  let overFoulsHome = 0, overFoulsAway = 0;
+  let overOffsHome = 0, overOffsAway = 0;
+
+  const scoreMap = new Map();
+
+  for(let i=0;i<N_SIM;i++){
+    // goals
+    const gh = poissonSample(lambdaHome);
+    const ga = poissonSample(lambdaAway);
+    sumHomeGoals += gh; sumAwayGoals += ga;
+    if(gh>ga) homeWins++; else if(gh===ga) draws++; else awayWins++;
+    if(gh+ga>2.5) overCount++; else underCount++;
+
+    // shots (Poisson)
+    const shotsH = poissonSample(shotsHomeExp);
+    const shotsA = poissonSample(shotsAwayExp);
+    sumShotsHome += shotsH; sumShotsAway += shotsA;
+
+    // shots on target: approximate as Poisson with mean shots * pOnTarget
+    // pOnTarget depends mildly on Elo: stronger teams convert slightly better
+    const baseOnTargetRate = 0.33; // approx fraction of shots on target
+    const pOnHome = clamp(baseOnTargetRate * Math.exp(eloDiff/4000), 0.18, 0.6);
+    const pOnAway = clamp(baseOnTargetRate * Math.exp(-eloDiff/4000), 0.18, 0.6);
+    const sotH = poissonSample(Math.max(0.0, shotsH * pOnHome));
+    const sotA = poissonSample(Math.max(0.0, shotsA * pOnAway));
+    sumSotHome += sotH; sumSotAway += sotA;
+
+    // corners
+    const cornersH = poissonSample(cornersHomeExp);
+    const cornersA = poissonSample(cornersAwayExp);
+    sumCornersHome += cornersH; sumCornersAway += cornersA;
+
+    // fouls
+    const foulsH = poissonSample(Math.max(0.5, foulsHomeExp));
+    const foulsA = poissonSample(Math.max(0.5, foulsAwayExp));
+    sumFoulsHome += foulsH; sumFoulsAway += foulsA;
+
+    // offsides
+    // correlate with shots: mean = shots * 0.12 -> sample Poisson
+    const offsH = poissonSample(Math.max(0, Math.round(shotsH * 0.12)));
+    const offsA = poissonSample(Math.max(0, Math.round(shotsA * 0.12)));
+    sumOffsHome += offsH; sumOffsAway += offsA;
+
+    // thresholds
+    if(shotsH > thresholds.shots) overShotsHome++;
+    if(shotsA > thresholds.shots) overShotsAway++;
+    if(sotH > thresholds.shotsOnTarget) overSotHome++;
+    if(sotA > thresholds.shotsOnTarget) overSotAway++;
+    if(cornersH > thresholds.corners) overCornersHome++;
+    if(cornersA > thresholds.corners) overCornersAway++;
+    if(foulsH > thresholds.fouls) overFoulsHome++;
+    if(foulsA > thresholds.fouls) overFoulsAway++;
+    if(offsH > thresholds.offsides) overOffsHome++;
+    if(offsA > thresholds.offsides) overOffsAway++;
+
+    // score map
+    const key = `${gh}-${ga}`;
+    scoreMap.set(key, (scoreMap.get(key)||0)+1);
+
+    // yield UI occasionally
+    if(i%500 === 0){
+      await new Promise(r => setTimeout(r,0));
+      updateProgress(i / N_SIM);
+    }
+  }
+  updateProgress(1);
+
+  // compile results
+  const scoresArr = Array.from(scoreMap.entries()).map(([k,v])=>({score:k,count:v}));
+  scoresArr.sort((a,b)=>b.count-a.count);
+  const top = scoresArr.slice(0,8).map(s=>{
+    const parts = s.score.split('-').map(x=>parseInt(x,10));
+    return {home:parts[0], away:parts[1], prob: s.count / N_SIM};
+  });
+
+  // averages and probabilities
+  const res = {
+    expectedHomeGoals: sumHomeGoals / N_SIM,
+    expectedAwayGoals: sumAwayGoals / N_SIM,
+    pHome: homeWins / N_SIM,
+    pDraw: draws / N_SIM,
+    pAway: awayWins / N_SIM,
+    pOver: overCount / N_SIM,
+    pUnder: underCount / N_SIM,
+    topScores: top,
+    details: {
+      lambdaHome, lambdaAway, eloDiff
+    },
+    // extended markets aggregated
+    ext: {
+      shots: {
+        expHome: sumShotsHome / N_SIM,
+        expAway: sumShotsAway / N_SIM,
+        pOverHome: overShotsHome / N_SIM,
+        pOverAway: overShotsAway / N_SIM
+      },
+      sot: {
+        expHome: sumSotHome / N_SIM,
+        expAway: sumSotAway / N_SIM,
+        pOverHome: overSotHome / N_SIM,
+        pOverAway: overSotAway / N_SIM
+      },
+      corners: {
+        expHome: sumCornersHome / N_SIM,
+        expAway: sumCornersAway / N_SIM,
+        pOverHome: overCornersHome / N_SIM,
+        pOverAway: overCornersAway / N_SIM
+      },
+      fouls: {
+        expHome: sumFoulsHome / N_SIM,
+        expAway: sumFoulsAway / N_SIM,
+        pOverHome: overFoulsHome / N_SIM,
+        pOverAway: overFoulsAway / N_SIM
+      },
+      offsides: {
+        expHome: sumOffsHome / N_SIM,
+        expAway: sumOffsAway / N_SIM,
+        pOverHome: overOffsHome / N_SIM,
+        pOverAway: overOffsAway / N_SIM
+      }
+    }
+  };
+
+  return res;
+}
+
+async function simulateBasket(homeElo, awayElo){
+  const adv = 50;
+  const adjHome = homeElo + adv;
+  const eloDiff = adjHome - awayElo;
+  const ptsDiffPerElo = 14 / 400.0;
+  const meanDiff = eloDiff * ptsDiffPerElo;
+  const basePoints = 110;
+  const expectedHome = basePoints + meanDiff/2;
+  const expectedAway = basePoints - meanDiff/2;
+  const sd = 12;
+
+  let homeWins = 0, awayWins = 0, sumHome = 0, sumAway = 0;
+  const scoreMap = new Map();
+
+  for(let i=0;i<N_SIM;i++){
+    const gh = Math.round(randNormal(expectedHome, sd));
+    const ga = Math.round(randNormal(expectedAway, sd));
+    const ghC = clamp(gh, 50, 160), gaC = clamp(ga, 50, 160);
+    sumHome += ghC; sumAway += gaC;
+    if(ghC>gaC) homeWins++; else if(ghC<gaC) awayWins++;
+    const key = `${ghC}-${gaC}`;
+    scoreMap.set(key, (scoreMap.get(key)||0)+1);
+    if(i%500===0){ await new Promise(r=>setTimeout(r,0)); updateProgress(i/N_SIM); }
+  }
+  updateProgress(1);
+  const scoresArr = Array.from(scoreMap.entries()).map(([k,v])=>({score:k,count:v}));
+  scoresArr.sort((a,b)=>b.count-a.count);
+  const top = scoresArr.slice(0,6).map(s=>{
+    const parts = s.score.split('-').map(x=>parseInt(x,10));
+    return {home:parts[0], away:parts[1], prob: s.count / N_SIM};
+  });
+
+  return {
+    expectedHome: sumHome / N_SIM,
+    expectedAway: sumAway / N_SIM,
+    pHome: homeWins / N_SIM,
+    pAway: awayWins / N_SIM,
+    topScores: top,
+    details: {meanDiff, sd}
+  };
+}
+
+async function simulateTennis(homeElo, awayElo){
+  const pSet = eloWinProb(homeElo, awayElo);
+  let homeMatchWins = 0, awayMatchWins = 0;
+  let counts = { "2-0":0, "2-1":0, "0-2":0, "1-2":0 };
+  let totalSets = 0;
+  for(let i=0;i<N_SIM;i++){
+    let hSets = 0, aSets = 0;
+    while(hSets < 2 && aSets < 2){
+      const r = Math.random();
+      if(r < pSet) hSets++; else aSets++;
+    }
+    totalSets += (hSets + aSets);
+    if(hSets > aSets){ homeMatchWins++; if(hSets===2 && aSets===0) counts["2-0"]++; else counts["2-1"]++; }
+    else { awayMatchWins++; if(aSets===2 && hSets===0) counts["0-2"]++; else counts["1-2"]++; }
+    if(i%500===0){ await new Promise(r=>setTimeout(r,0)); updateProgress(i/N_SIM); }
+  }
+  updateProgress(1);
+  return {
+    expectedHome: pSet,
+    expectedAway: 1 - pSet,
+    pHome: homeMatchWins / N_SIM,
+    pAway: awayMatchWins / N_SIM,
+    topScores: [
+      {home:2, away:0, prob: counts["2-0"] / N_SIM},
+      {home:2, away:1, prob: counts["2-1"] / N_SIM},
+      {home:1, away:2, prob: counts["1-2"] / N_SIM},
+      {home:0, away:2, prob: counts["0-2"] / N_SIM}
+    ],
+    details: {pSet, avgSets: totalSets / N_SIM}
+  };
+}
+
+/* ---------- UI wiring ---------- */
+
+const form = document.getElementById('form');
+const runBtn = document.getElementById('run');
+const progressWrap = document.getElementById('progressWrap');
+const progressBar = document.getElementById('progressBar');
+
+function updateProgress(frac){
+  progressWrap.style.display = 'block';
+  progressBar.style.width = Math.round(frac*100) + '%';
+}
+function resetProgress(){ progressBar.style.width = '0%'; progressWrap.style.display = 'none'; }
+
+form.addEventListener('submit', async function(e){
+  e.preventDefault();
+  runBtn.disabled = true;
+  runBtn.textContent = '⏳ Simulazioni in corso...';
+  resetProgress();
+
+  const sport = document.getElementById('sport').value;
+  const home = document.getElementById('home').value || 'Home';
+  const away = document.getElementById('away').value || 'Away';
+  const homeElo = Number(document.getElementById('homeElo').value);
+  const awayElo = Number(document.getElementById('awayElo').value);
+
+  document.getElementById('results').style.display = 'none';
+  updateProgress(0.01);
+
+  let result;
+  if(sport === 'soccer'){
+    result = await simulateSoccerExtended(homeElo, awayElo);
+    document.getElementById('expLabel').textContent = 'Goal attesi Casa';
+    document.getElementById('expLabel2').textContent = 'Goal attesi Trasferta';
+    document.getElementById('nameX').textContent = 'Pareggio';
+    document.getElementById('drawRow').style.display = 'flex';
+    document.getElementById('ouSection').style.display = 'block';
+    document.getElementById('markets').style.display = 'block';
+  } else if(sport === 'basket'){
+    result = await simulateBasket(homeElo, awayElo);
+    document.getElementById('expLabel').textContent = 'Punti attesi Casa';
+    document.getElementById('expLabel2').textContent = 'Punti attesi Trasferta';
+    document.getElementById('nameX').textContent = '—';
+    document.getElementById('drawRow').style.display = 'none';
+    document.getElementById('ouSection').style.display = 'none';
+    document.getElementById('markets').style.display = 'none';
+  } else {
+    result = await simulateTennis(homeElo, awayElo);
+    document.getElementById('expLabel').textContent = 'Prob. set Casa';
+    document.getElementById('expLabel2').textContent = 'Prob. set Trasferta';
+    document.getElementById('nameX').textContent = '—';
+    document.getElementById('drawRow').style.display = 'none';
+    document.getElementById('ouSection').style.display = 'none';
+    document.getElementById('markets').style.display = 'none';
+  }
+
+  // Render high-level results
+  document.getElementById('results').style.display = 'block';
+  if(sport === 'tennis'){
+    document.getElementById('expHome').textContent = (result.expectedHome*100).toFixed(1) + '%';
+    document.getElementById('expAway').textContent = (result.expectedAway*100).toFixed(1) + '%';
+  } else if(sport === 'soccer'){
+    document.getElementById('expHome').textContent = formatNum(result.expectedHomeGoals,2);
+    document.getElementById('expAway').textContent = formatNum(result.expectedAwayGoals,2);
+  } else {
+    document.getElementById('expHome').textContent = formatNum(result.expectedHome,1);
+    document.getElementById('expAway').textContent = formatNum(result.expectedAway,1);
+  }
+  document.getElementById('probHome').textContent = (result.pHome*100).toFixed(1) + '%';
+  document.getElementById('probAway').textContent = (result.pAway*100).toFixed(1) + '%';
+
+  // bars
+  function setBar(id, frac){
+    const el = document.getElementById(id);
+    if(!el) return;
+    const pct = Math.max(0, Math.min(100, frac*100));
+    el.style.width = pct + '%';
+    el.textContent = pct.toFixed(1) + '%';
+  }
+  setBar('bar1', result.pHome);
+  setBar('bar2', result.pAway);
+  if(result.pDraw!=null) setBar('barX', result.pDraw); else { document.getElementById('barX').style.width = '0%'; document.getElementById('barX').textContent = ''; }
+
+  if(result.pOver!=null){
+    setBar('barOver', result.pOver);
+    setBar('barUnder', result.pUnder);
+  }
+
+  // top scores
+  const topScoresEl = document.getElementById('topScores');
+  topScoresEl.innerHTML = '';
+  result.topScores.forEach(s=>{
+    const el = document.createElement('div');
+    el.className = 'score';
+    const probDisplay = (s.prob * 100).toFixed(2) + '%';
+    el.innerHTML = `<div style="font-weight:800;color:var(--accent)">${s.home} - ${s.away}</div><div class="muted small">${probDisplay}</div>`;
+    topScoresEl.appendChild(el);
+  });
+
+  // markets (only for soccer)
+  const marketsGrid = document.getElementById('marketsGrid');
+  marketsGrid.innerHTML = '';
+  if(sport === 'soccer' && result.ext){
+    const makeCard = (title, homeVal, awayVal, homeOver, awayOver, unit='')=>{
+      const div = document.createElement('div');
+      div.className = 'market-card';
+      div.innerHTML = `
+        <div style="font-weight:800;color:var(--accent);margin-bottom:6px">${title}</div>
+        <div class="small muted">Media: Casa / Trasferta</div>
+        <div style="display:flex;gap:10px;margin-top:6px">
+          <div style="flex:1;text-align:center">
+            <div style="font-weight:800">${formatNum(homeVal,2)}${unit}</div>
+            <div class="muted small">Over: ${(homeOver*100).toFixed(1)}%</div>
+          </div>
+          <div style="flex:1;text-align:center">
+            <div style="font-weight:800">${formatNum(awayVal,2)}${unit}</div>
+            <div class="muted small">Over: ${(awayOver*100).toFixed(1)}%</div>
+          </div>
+        </div>
+      `;
+      return div;
+    };
+
+    marketsGrid.appendChild(makeCard('Tiri totali', result.ext.shots.expHome, result.ext.shots.expAway, result.ext.shots.pOverHome, result.ext.shots.pOverAway));
+    marketsGrid.appendChild(makeCard('Tiri in porta', result.ext.sot.expHome, result.ext.sot.expAway, result.ext.sot.pOverHome, result.ext.sot.pOverAway));
+    marketsGrid.appendChild(makeCard('Corner', result.ext.corners.expHome, result.ext.corners.expAway, result.ext.corners.pOverHome, result.ext.corners.pOverAway));
+    marketsGrid.appendChild(makeCard('Falli commessi', result.ext.fouls.expHome, result.ext.fouls.expAway, result.ext.fouls.pOverHome, result.ext.fouls.pOverAway));
+    marketsGrid.appendChild(makeCard('Fuorigioco', result.ext.offsides.expHome, result.ext.offsides.expAway, result.ext.offsides.pOverHome, result.ext.offsides.pOverAway));
+  }
+
+  // extra details
+  const extra = document.getElementById('extraInfo');
+  if(sport === 'soccer'){
+    extra.innerHTML = `<div>Dettagli: λ gol casa ≈ ${result.details.lambdaHome.toFixed(3)}, λ gol trasf. ≈ ${result.details.lambdaAway.toFixed(3)}, Elo diff (con vantaggio casa) = ${result.details.eloDiff}</div>`;
+  } else if(sport === 'basket'){
+    extra.innerHTML = `<div>Dettagli: sd utilizzata ≈ ${result.details.sd}</div>`;
+  } else {
+    extra.innerHTML = `<div>Dettagli: prob. per set ≈ ${(result.details.pSet*100).toFixed(2)}%, media set per match ≈ ${result.details.avgSets?.toFixed(2) ?? '—'}</div>`;
+  }
+
+  resetProgress();
+  runBtn.disabled = false;
+  runBtn.textContent = '▶️ Esegui 10.000 simulazioni';
+});
+
+/* Initialize UI */
+document.addEventListener('DOMContentLoaded', ()=> {
+  document.getElementById('drawRow').style.display = 'flex';
+  document.getElementById('markets').style.display = 'block';
+});
+</script>
+</body>
+</html>
